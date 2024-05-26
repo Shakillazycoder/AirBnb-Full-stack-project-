@@ -51,6 +51,31 @@ async function run() {
 
     const roomsCollection = client.db('stayvista').collection('rooms')
     const usersCollection = client.db('stayvista').collection('users')
+    
+    // verify admin credentials
+    const verifyAdmin = async (req, res, next) => {
+      const user = req.user
+      const query = {email: user?.email}
+      const result = await usersCollection.findOne(query)
+      console.log(result?.role)
+      if(!result || result?.role !== 'admin') {
+        return res.status(401).send({ message: 'unauthorized access' })
+      }
+      next()
+    }
+    
+    // verify Host credentials
+    const verifyHost = async (req, res, next) => {
+      const user = req.user
+      const query = {email: user?.email}
+      const result = await usersCollection.findOne(query)
+      console.log(result?.role)
+      if(!result || result?.role !== 'host') {
+        return res.status(401).send({ message: 'unauthorized access' })
+      }
+      next()
+    }
+
     // auth related api
     app.post('/jwt', async (req, res) => {
       const user = req.body
@@ -107,8 +132,14 @@ async function run() {
       res.send(result)
     })
 
+    app.get('/user/:email', async (req, res) => {
+      const email = req.params.email
+      const user = await usersCollection.findOne({email})
+      res.send(user)
+    })
+
     // get all the users from db
-    app.get('/users', async(req, res) => {
+    app.get('/users', verifyToken, verifyAdmin, async(req, res) => {
       try {
         const users = await usersCollection.find().toArray()
         res.send(users)
@@ -117,21 +148,20 @@ async function run() {
       }
     })
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    app.patch('/users/update/:email', async (req, res) => {
+      const email = req.params.email
+      const user = req.body
+      const query = {email}
+      const options = {upsert : true}
+      const updateDoc = {
+        $set: {
+         ...user,
+          Timestamp: Date.now(),
+        },
+      }
+      const result = await usersCollection.updateOne(query, updateDoc, options)
+      res.send(result)
+    })
 
 
     // get all rooms from db
@@ -160,7 +190,7 @@ async function run() {
     })
 
     // save a room from Add form
-    app.post('/add-room', async (req, res) =>{
+    app.post('/add-room', verifyToken, verifyHost, async (req, res) =>{
       const room = req.body
       try {
         const result = await roomsCollection.insertOne(room)
@@ -170,7 +200,7 @@ async function run() {
       }
     })
 
-    app.get('/my-listings/:email', async (req, res) => {
+    app.get('/my-listings/:email', verifyToken, verifyHost, async (req, res) => {
       const email = req.params.email
       let query = {"host.email": email}
       try {
@@ -182,7 +212,7 @@ async function run() {
     })
 
 
-    app.delete('/delete-room/:id', async (req, res) => {
+    app.delete('/delete-room/:id', verifyToken, verifyHost, async (req, res) => {
       const id = req.params.id
       const query = {_id: new ObjectId(id)}
       try {
@@ -192,16 +222,6 @@ async function run() {
         res.status(500).send(err)
       }
     })
-
-
-
-
-
-
-
-
-
-
 
 
     // Send a ping to confirm a successful connection
